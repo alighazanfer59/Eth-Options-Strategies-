@@ -8,6 +8,9 @@ pip install -r requirements.txt
 python run_backtest.py          # about 15s, writes everything to results/
 ```
 
+> **Looking for lower drawdowns?** See [IMPROVEMENTS.md](IMPROVEMENTS.md). It tests 8 variants on ETH, BTC, SPY, QQQ and GLD.
+> A diversified put-spread ladder with a trend filter returned about 7.5 % CAGR with a -5.5 % max drawdown.
+
 ## Strategy rules as implemented
 
 | Step | Rule (default) | Where it comes from |
