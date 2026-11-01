@@ -69,17 +69,17 @@ The assets' trends and sell-offs don't line up.
 
 | Portfolio (equal weight per asset) | CAGR | Max DD | Worst year | Positive months | 2020–23 | 2024–26 |
 |---|---|---|---|---|---|---|
-| **ETH+BTC+SPY+GLD, P4 (puts 70 / trend 30)** | **12.7 %** | **-6.8 %** | **-5.4 %** | **69 %** | 12.7 % / -6.8 % | 12.5 % / -4.5 % |
+| **ETH+BTC+SPY+GLD, P4 (puts 70 / trend 30)** | **12.8 %** | **-6.8 %** | **-5.4 %** | **69 %** | 12.8 % / -6.8 % | 12.6 % / -4.5 % |
 | ETH+BTC+SPY+GLD, P3 (puts 50 / trend 50) | 16.2 % | -10.0 % | -7.4 % | 64 % | 16.8 % / -10.0 % | 14.9 % / -5.4 % |
-| All 5 (adds QQQ), P4 | 12.2 % | -7.3 % | -6.4 % | 65 % | 12.0 % / -7.3 % | 12.3 % / -4.7 % |
-| All 5, P3 | 15.3 % | -10.4 % | -8.4 % | 64 % | 15.6 % / -10.4 % | 14.5 % / -5.4 % |
+| All 5 (adds QQQ), P4 | 12.3 % | -7.3 % | -6.4 % | 65 % | 12.1 % / -7.3 % | 12.5 % / -4.7 % |
+| All 5, P3 | 15.3 % | -10.4 % | -8.4 % | 64 % | 15.7 % / -10.4 % | 14.6 % / -5.4 % |
 | *All 5, ref: Trend 50 + T-bills 50* | *12.8 %* | *-8.4 %* | *-5.9 %* | *63 %* | | |
 | *All 5, ref: Trend 30 + T-bills 70* | *8.8 %* | *-4.6 %* | *-2.8 %* | *65 %* | | |
 | *All 5, buy & hold* | *35.8 %* | *-47.2 %* | *-37.9 %* | *61 %* | | |
 
-ETH+BTC+SPY+GLD, P4, by year: 2020 **+26.6 %**, 2021 **+16.0 %**, 2022 **-5.4 %**, 2023 **+16.2 %**, 2024 **+18.9 %**, 2025 **+12.3 %**, 2026 YTD **+5.0 %**.
+ETH+BTC+SPY+GLD, P4, by year: 2020 **+26.7 %**, 2021 **+16.0 %**, 2022 **-5.4 %**, 2023 **+16.4 %**, 2024 **+19.1 %**, 2025 **+12.4 %**, 2026 YTD **+5.1 %**.
 
-The cost stress test on the 5-asset P3 gave 15.3 % at base costs, 14.5 % with 2× option bid/ask, and 13.9 % with 2× bid/ask plus 3× spot fees.
+The cost stress test on the 5-asset P3 gave 15.3 % at base costs, 14.6 % with 2× option bid/ask, and 14.0 % with 2× bid/ask plus 3× spot fees.
 Max DD stays at -10 to -11 %. Unlike the pure put-spread basket from before, this mix is not fragile to execution costs.
 
 ![multi](results/combo/multi_asset.png)
@@ -114,7 +114,7 @@ So the options are a return enhancer here, not the drawdown fix. **The drawdown 
 * **30 % trend sleeve:** target weight = (share of 50/100/200 DMAs the price is above) × min(1, 40 % ÷ implied vol). Trade at the close the day after a change of more than 10 points.
 * Rebalance the sleeves and assets monthly.
 
-Backtest: **12.7 %/yr, -6.8 % max drawdown, worst year -5.4 %, 69 % of months positive.**
+Backtest: **12.8 %/yr, -6.8 % max drawdown, worst year -5.4 %, 69 % of months positive.**
 
 **Balanced:** the same, with 50 % put spreads / 50 % trend → **16.2 %/yr, -10 % max DD, worst year -7.4 %**.
 
