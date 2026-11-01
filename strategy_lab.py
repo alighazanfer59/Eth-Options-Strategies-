@@ -160,6 +160,8 @@ class Strat:
     # protective puts on held units (turns covered calls into a collar)
     protect_delta: float | None = None
     protect_dte: int = 60
+    # optional strike rule: fn(day, S, delta_fn, default_K) -> (short_K, long_K) or None (skip)
+    strike_fn: object = None
 
 
 @dataclass
@@ -219,12 +221,15 @@ def run(df: pd.DataFrame, inst: Instrument, st: Strat) -> dict:
     def naked_notional():
         return sum(l.strike * l.qty for l in legs if l.kind == "put" and l.group == 0 and l.side < 0)
 
-    def trade(kind, side, delta, dte, qty_fn, S, atm, r, day, group):
+    def trade(kind, side, delta, dte, qty_fn, S, atm, r, day, group, K=None):
         nonlocal cash
         T = dte / CAL
+        if K is not None:                       # strike given -> smile vol at its delta
+            delta = bs_delta(S, K, T, atm / 100, r, kind)
         vol_mid = iv_at(atm, kind, delta)
         vol_exec = vol_mid - inst.spread_vol * (1 if side < 0 else -1)
-        K = strike_for_delta(S, T, vol_mid / 100, r, delta, kind)
+        if K is None:
+            K = strike_for_delta(S, T, vol_mid / 100, r, delta, kind)
         qty = qty_fn(K)
         if qty <= 0:
             return None
@@ -247,14 +252,20 @@ def run(df: pd.DataFrame, inst: Instrument, st: Strat) -> dict:
             T = st.put_dte / CAL
             K1 = strike_for_delta(S, T, iv_at(atm, "put", st.put_delta) / 100, r, st.put_delta, "put")
             K2 = strike_for_delta(S, T, iv_at(atm, "put", st.wing_delta) / 100, r, st.wing_delta, "put")
+            if st.strike_fn is not None:
+                pick = st.strike_fn(day, S, lambda K: bs_delta(S, K, T, atm / 100, r, "put"), K1)
+                if pick is None:
+                    agg["rule_skips"] = agg.get("rule_skips", 0) + 1
+                    return
+                K1, K2 = pick
             width = K1 - K2
             qty = min(st.risk_pct * eq, max(free, 0)) / width
             if qty * width < 0.25 * st.risk_pct * eq:
                 agg["skipped"] += 1
                 return
             gid += 1
-            sh = trade("put", -1, st.put_delta, st.put_dte, lambda K: qty, S, atm, r, day, gid)
-            lo = trade("put", +1, st.wing_delta, st.put_dte, lambda K: qty, S, atm, r, day, gid)
+            sh = trade("put", -1, st.put_delta, st.put_dte, lambda K: qty, S, atm, r, day, gid, K=K1)
+            lo = trade("put", +1, st.wing_delta, st.put_dte, lambda K: qty, S, atm, r, day, gid, K=K2)
             agg["put_prem"] += sh.premium + lo.premium
             detail = dict(short_k=sh.strike, long_k=lo.strike, qty=qty, credit=sh.premium + lo.premium,
                           expiry=sh.expiry, iv=atm, equity=eq)
@@ -265,10 +276,16 @@ def run(df: pd.DataFrame, inst: Instrument, st: Strat) -> dict:
                 return min(want, max(free, 0), max(room, 0)) / K
             T = st.put_dte / CAL
             K = strike_for_delta(S, T, iv_at(atm, "put", st.put_delta) / 100, r, st.put_delta, "put")
+            if st.strike_fn is not None:
+                pick = st.strike_fn(day, S, lambda k: bs_delta(S, k, T, atm / 100, r, "put"), K)
+                if pick is None:
+                    agg["rule_skips"] = agg.get("rule_skips", 0) + 1
+                    return
+                K = pick[0]
             if q(K) * K < 0.25 * st.notional_pct * eq:
                 agg["skipped"] += 1
                 return
-            sh = trade("put", -1, st.put_delta, st.put_dte, q, S, atm, r, day, 0)
+            sh = trade("put", -1, st.put_delta, st.put_dte, q, S, atm, r, day, 0, K=K)
             agg["put_prem"] += sh.premium
         agg["puts"] += 1
         last_sale = day
