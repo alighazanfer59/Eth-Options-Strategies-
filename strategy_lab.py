@@ -239,6 +239,7 @@ def run(df: pd.DataFrame, inst: Instrument, st: Strat) -> dict:
 
     def sell_put(S, atm, r, day, why):
         nonlocal gid, last_sale
+        detail = {}
         eq = equity(S, atm, r, day)
         free = cash - collateral()
         if st.wing_delta:
@@ -255,6 +256,8 @@ def run(df: pd.DataFrame, inst: Instrument, st: Strat) -> dict:
             sh = trade("put", -1, st.put_delta, st.put_dte, lambda K: qty, S, atm, r, day, gid)
             lo = trade("put", +1, st.wing_delta, st.put_dte, lambda K: qty, S, atm, r, day, gid)
             agg["put_prem"] += sh.premium + lo.premium
+            detail = dict(short_k=sh.strike, long_k=lo.strike, qty=qty, credit=sh.premium + lo.premium,
+                          expiry=sh.expiry, iv=atm, equity=eq)
         else:
             room = st.max_exposure * eq - naked_notional() - units * S
             def q(K):
@@ -269,7 +272,7 @@ def run(df: pd.DataFrame, inst: Instrument, st: Strat) -> dict:
             agg["put_prem"] += sh.premium
         agg["puts"] += 1
         last_sale = day
-        log.append(dict(date=day, type="sell_put", spot=S, why=why))
+        log.append(dict(date=day, type="sell_put", spot=S, why=why, **(detail if st.wing_delta else {})))
 
     def sell_call_spread(S, atm, r, day):
         nonlocal gid, last_sale

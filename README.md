@@ -14,6 +14,7 @@ python run_backtest.py          # about 15s, writes everything to results/
 > **When does it beat buy & hold?** See [REGIMES.md](REGIMES.md). In short: in every ETH bear phase, almost never in bull phases.
 >
 > **Combined portfolio:** see [COMBO.md](COMBO.md). Put-spread ladder + trend sleeve across ETH, BTC, SPY and GLD returned about 12.7 %/yr with a -6.8 % max drawdown, positive in every year except 2022 (-5.4 %).
+> A step-by-step walkthrough of the ETH-only version, with real trades, is in [HOW_ETH_P4_WORKS.md](HOW_ETH_P4_WORKS.md).
 
 ## Strategy rules as implemented
 
