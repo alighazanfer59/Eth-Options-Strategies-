@@ -17,6 +17,8 @@ python run_backtest.py          # about 15s, writes everything to results/
 > A step-by-step walkthrough of the ETH-only version, with real trades, is in [HOW_ETH_P4_WORKS.md](HOW_ETH_P4_WORKS.md).
 >
 > **Support-level strikes:** see [SUPPORT_LEVELS.md](SUPPORT_LEVELS.md). Selling puts only at solid daily support below the 50 % level of the ATH ↔ last-cycle-low range cut the ETH-only 70/30 drawdown from -11.1 % to -8.3 % (16.1 %/yr).
+>
+> **Since 2022 (fresh start, harder test):** see [SINCE_2022.md](SINCE_2022.md). Most single ETH option strategies failed to beat T-bills (4.1 %/yr). ETH-only P4-S1 made 8.5 %/yr with a -7.6 % max drawdown. The multi-asset version made 10.3 %/yr with a -4.8 % max drawdown.
 
 ## Strategy rules as implemented
 
