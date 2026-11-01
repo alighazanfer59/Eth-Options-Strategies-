@@ -10,6 +10,8 @@ python run_backtest.py          # about 15s, writes everything to results/
 
 > **Looking for lower drawdowns?** See [IMPROVEMENTS.md](IMPROVEMENTS.md). It tests 8 variants on ETH, BTC, SPY, QQQ and GLD.
 > A diversified put-spread ladder with a trend filter returned about 7.5 % CAGR with a -5.5 % max drawdown.
+>
+> **When does it beat buy & hold?** See [REGIMES.md](REGIMES.md). In short: in every ETH bear phase, almost never in bull phases.
 
 ## Strategy rules as implemented
 
