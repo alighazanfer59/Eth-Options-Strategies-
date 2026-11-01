@@ -152,6 +152,14 @@ class Strat:
     call_mode: str = "cash_settle"   # "cash_settle" | "called_away"
     trend_exit_ma: int | None = None # sell held units when close < MA
     cash_yield: bool = True
+    # bear-side / range income: call credit spreads on the same schedule
+    bear_calls: str = "none"         # "none" | "below_ma" (when trend filter fails) | "always"
+    bear_call_delta: float = 0.25
+    bear_call_wing: float = 0.10
+    bear_risk_pct: float | None = None   # defaults to risk_pct
+    # protective puts on held units (turns covered calls into a collar)
+    protect_delta: float | None = None
+    protect_dte: int = 60
 
 
 @dataclass
@@ -198,16 +206,14 @@ def run(df: pd.DataFrame, inst: Instrument, st: Strat) -> dict:
         c = 0.0
         groups = {}
         for l in legs:
-            if l.kind != "put":
-                continue
-            if l.group == 0 and l.side < 0:
+            if l.kind == "put" and l.group == 0 and l.side < 0:
                 c += l.strike * l.qty
             elif l.group:
                 groups.setdefault(l.group, []).append(l)
         for g in groups.values():
             sh = [x for x in g if x.side < 0][0]
             lo = [x for x in g if x.side > 0][0]
-            c += (sh.strike - lo.strike) * sh.qty
+            c += abs(sh.strike - lo.strike) * sh.qty
         return c
 
     def naked_notional():
@@ -265,6 +271,27 @@ def run(df: pd.DataFrame, inst: Instrument, st: Strat) -> dict:
         last_sale = day
         log.append(dict(date=day, type="sell_put", spot=S, why=why))
 
+    def sell_call_spread(S, atm, r, day):
+        nonlocal gid, last_sale
+        eq = equity(S, atm, r, day)
+        free = cash - collateral()
+        rp = st.bear_risk_pct if st.bear_risk_pct is not None else st.risk_pct
+        T = st.put_dte / CAL
+        K1 = strike_for_delta(S, T, iv_at(atm, "call", st.bear_call_delta) / 100, r, st.bear_call_delta, "call")
+        K2 = strike_for_delta(S, T, iv_at(atm, "call", st.bear_call_wing) / 100, r, st.bear_call_wing, "call")
+        width = K2 - K1
+        qty = min(rp * eq, max(free, 0)) / width
+        if qty * width < 0.25 * rp * eq:
+            agg["skipped"] += 1
+            return
+        gid += 1
+        sh = trade("call", -1, st.bear_call_delta, st.put_dte, lambda K: qty, S, atm, r, day, gid)
+        lo = trade("call", +1, st.bear_call_wing, st.put_dte, lambda K: qty, S, atm, r, day, gid)
+        agg["bear_prem"] = agg.get("bear_prem", 0.0) + sh.premium + lo.premium
+        agg["bear_spreads"] = agg.get("bear_spreads", 0) + 1
+        last_sale = day
+        log.append(dict(date=day, type="sell_call_spread", spot=S))
+
     for day, row in data.iterrows():
         S, atm, r = float(row.close), float(row.iv) + inst.atm_offset, float(row.rate)
         # interest on cash (calendar days elapsed)
@@ -295,6 +322,9 @@ def run(df: pd.DataFrame, inst: Instrument, st: Strat) -> dict:
                     agg["put_settle"] += l.side * intrinsic * l.qty
                     if l.side < 0 and intrinsic > 0:
                         agg["assigned"] += 1
+            elif l.group:                                   # call credit spread legs
+                cash += l.side * intrinsic * l.qty
+                agg["bear_settle"] = agg.get("bear_settle", 0.0) + l.side * intrinsic * l.qty
             else:
                 if intrinsic > 0 and st.call_mode == "called_away":
                     q = min(l.qty, units)
@@ -308,13 +338,15 @@ def run(df: pd.DataFrame, inst: Instrument, st: Strat) -> dict:
 
         # ---- trend exit: dump held units (and their calls) -------------------
         if st.trend_exit_ma and units > 0 and S < row[f"ma{st.trend_exit_ma}"]:
-            for l in [x for x in legs if x.kind == "call"]:
+            # close covered calls (buy back) and protective puts (sell) tied to the units
+            for l in [x for x in legs if x.group == 0 and (x.kind == "call" or x.side > 0)]:
                 legs.remove(l)
                 T = (l.expiry - day).days / CAL
-                d = bs_delta(S, l.strike, T, atm / 100, r, "call")
-                px = bs(S, l.strike, T, (iv_at(atm, "call", d) + inst.spread_vol) / 100, r, "call")
-                cash -= px * l.qty
-                agg["call_settle"] -= px * l.qty
+                d = bs_delta(S, l.strike, T, atm / 100, r, l.kind)
+                px = bs(S, l.strike, T, (iv_at(atm, l.kind, d) - l.side * inst.spread_vol) / 100, r, l.kind)
+                cash += l.side * px * l.qty
+                if l.kind == "call":
+                    agg["call_settle"] -= px * l.qty
             cash += units * S * (1 - inst.spot_fee)
             units, cost = 0.0, 0.0
             agg["trend_exits"] += 1
@@ -330,7 +362,8 @@ def run(df: pd.DataFrame, inst: Instrument, st: Strat) -> dict:
 
         # ---- new puts ------------------------------------------------------
         ok = True
-        if st.trend_ma and not (S > row[f"ma{st.trend_ma}"]):
+        trend_ok = not (st.trend_ma and not (S > row[f"ma{st.trend_ma}"]))
+        if not trend_ok:
             ok = False
         if st.ivr_min is not None and not (row.ivr >= st.ivr_min):
             ok = False
@@ -340,6 +373,8 @@ def run(df: pd.DataFrame, inst: Instrument, st: Strat) -> dict:
             signal = row.ret <= -thr
         else:
             signal = last_sale is None or (day - last_sale).days >= st.ladder_every
+        if signal and (st.bear_calls == "always" or (st.bear_calls == "below_ma" and not trend_ok)):
+            sell_call_spread(S, atm, r, day)
         if ok and signal:
             sell_put(S, atm, r, day, "signal")
         elif ok and assigned and st.put_on_assignment and st.assign == "hold":
@@ -347,10 +382,16 @@ def run(df: pd.DataFrame, inst: Instrument, st: Strat) -> dict:
 
         # ---- covered calls -----------------------------------------------
         if st.sell_calls and units > 1e-12:
-            unc = units - sum(l.qty for l in legs if l.kind == "call")
+            unc = units - sum(l.qty for l in legs if l.kind == "call" and l.group == 0)
             if unc > 1e-12:
                 c = trade("call", -1, st.call_delta, st.call_dte, lambda K: unc, S, atm, r, day, 0)
                 agg["call_prem"] += c.premium
+        # ---- protective puts (collar) ------------------------------------
+        if st.protect_delta and units > 1e-12:
+            unp = units - sum(l.qty for l in legs if l.kind == "put" and l.group == 0 and l.side > 0)
+            if unp > 1e-12:
+                pp = trade("put", +1, st.protect_delta, st.protect_dte, lambda K: unp, S, atm, r, day, 0)
+                agg["protect_cost"] = agg.get("protect_cost", 0.0) - pp.premium
 
         eq = equity(S, atm, r, day)
         rows.append(dict(date=day, close=S, equity=eq, cash=cash, units=units,
@@ -415,3 +456,54 @@ def metrics(eq: pd.Series, ppy: int) -> dict:
         dd_recovery_days=(rec.index[0] - trough).days if len(rec) else np.nan,
         final=eq.iloc[-1],
     )
+
+
+# --------------------------------------------------------------------------- #
+# Trend-following spot sleeve (captures the rallies the option sleeves give up)
+# --------------------------------------------------------------------------- #
+def trend_hold(df, inst: Instrument, start="2020-01-01", end=None, capital=100_000.0,
+               ma=200, vol_target: float | None = None, max_weight: float = 1.0,
+               band: float = 0.10, cash_yield: bool = True, lag: int = 1) -> pd.Series:
+    """Hold the asset while close > MA (else T-bills). With vol_target, size the
+    position at vol_target / implied vol (capped at max_weight). Trades at the
+    close, only when the target weight moves by more than `band`."""
+    mas = ma if isinstance(ma, (tuple, list)) else (ma,)
+    frac = np.mean([(df.close > df[f"ma{m}"]).values for m in mas], axis=0)   # share of bullish MAs
+    base = np.minimum(max_weight, vol_target / df.iv.values) if vol_target else max_weight
+    # signal from yesterday's close, traded at today's close (no same-bar execution)
+    target = pd.Series(frac * base, index=df.index).shift(lag).fillna(0.0)
+    d = df.loc[start:end]
+    cash, units, prev, out = capital, 0.0, None, []
+    for day, r in d.iterrows():
+        S = r.close
+        if prev is not None and cash_yield and cash > 0:
+            cash += cash * r.rate * (day - prev).days / CAL
+        prev = day
+        eq = cash + units * S
+        w = float(target.loc[day])
+        cur = units * S / eq if eq > 0 else 0
+        if (w == 0 and units > 0) or (w > 0 and abs(w - cur) > band) or (w > 0 and cur == 0):
+            tgt_units = w * eq / S
+            dq = tgt_units - units
+            cash -= dq * S + abs(dq) * S * inst.spot_fee
+            units = tgt_units
+        out.append(cash + units * S)
+    return pd.Series(out, index=d.index)
+
+
+def combine(curves: dict, weights: dict, rebalance: str = "ME") -> pd.Series:
+    """Portfolio of sleeves with fixed weights, rebalanced each period (sleeves scale linearly)."""
+    idx = sorted(set().union(*[c.index for c in curves.values()]))
+    rets = pd.DataFrame({k: curves[k].reindex(idx).ffill().pct_change().fillna(0) for k in weights})
+    wts = pd.Series(weights, dtype=float)
+    val, alloc, out = 1.0, wts * 1.0, []
+    period = pd.Series(pd.DatetimeIndex(idx).to_period(rebalance[0]), index=idx)
+    last = None
+    for t in idx:
+        alloc = alloc * (1 + rets.loc[t])
+        val = alloc.sum()
+        if last is not None and period[t] != last:
+            alloc = wts * val
+        last = period[t]
+        out.append(val)
+    return pd.Series(out, index=idx) * 100_000.0
